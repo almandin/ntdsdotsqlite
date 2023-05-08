@@ -4,7 +4,8 @@ import argparse
 
 from ntdsdotsqlite.ntdsdotsqlite import run
 
-if __name__ == "__main__":
+
+def main():
     parser = argparse.ArgumentParser(
         prog="NTDS.sqlite",
         description=(
@@ -25,3 +26,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     run(args.NTDS, args.outfile, args.system)
+
+
+if __name__ == "__main__":
+    main()
