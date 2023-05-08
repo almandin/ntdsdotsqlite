@@ -333,16 +333,6 @@ class NTDSHashes:
 
         return decryptedHash
 
-    @staticmethod
-    def __fileTimeToDateTime(t):
-        t -= 116444736000000000
-        t //= 10000000
-        if t < 0:
-            return 'never'
-        else:
-            dt = datetime.fromtimestamp(t)
-            return dt.strftime("%Y-%m-%d %H:%M")
-
     def __decryptSupplementalInfo(self, record):
         # This is based on [MS-SAMR] 2.2.10 Supplemental Credentials Structures
         haveInfo = False

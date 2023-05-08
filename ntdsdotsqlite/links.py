@@ -7,6 +7,5 @@ def compute_links(ese_db):
     for link in links.records():
         flink = link.get("link_DNT")
         blink = link.get("backlink_DNT")
-        # relations[flink].append(blink)
         relations[blink].append(flink)
     return relations

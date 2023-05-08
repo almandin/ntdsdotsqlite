@@ -17,6 +17,7 @@ def raw_to_guid(raw):
     return f"{p1}-{p2}-{p3}-{p4}-{p5}"
 
 
+# Transforms raw bytes returned by dessect to a correct SID string
 def raw_to_sid(raw):
     rev = str(int(raw[0]))
     nb_dashes = int(raw[1])
@@ -28,6 +29,7 @@ def raw_to_sid(raw):
     return f"S-{rev}-{id_auth_value}-{'-'.join(subparts)}"
 
 
+# Translates microsoft duration/datetime format (intervals of 100ns) to python datetime object
 def hundredns_to_datetime(ns):
     return timedelta(seconds=ns / 10000000) + datetime(1601, 1, 1)
 
@@ -83,15 +85,8 @@ def create_database(sqlite_path):
         db.close()
 
 
-def ESE_cursor_next(db, table):
-    cursor = db.openTable(table)
-    while (row := db.getNextRow(cursor)):
-        yield {
-            db.column_names[k].decode("utf-8") if k in db.column_names.keys() else k: v
-            for k, v in row.items() if v
-        }
-
-
+# Returns the object in the database representing a schema object of the chosen schema GUID.
+# Its main use is to get its DNT that will be used by all subsequent objects as an objectCategory.
 def get_schema_object(ese_db, schemaGuid):
     slices = [
         slice(0, 8), slice(9, 13), slice(14, 18), slice(19, 23),
@@ -137,9 +132,10 @@ class UAC_FLAGS(IntFlag):
     PARTIAL_SECRETS_ACCOUNT = 0x04000000
 
 
+# Extracted from python-ldap/Lib/ldap/dn.py, in order to remove one dependency
+# that would need to be compiled otherwise.
 def escape_dn_chars(s):
     """
-    From python-ldap/Lib/ldap/dn.py
     Escape all DN special characters found in s
     with a back-slash (see RFC 4514, section 2.4)
     """

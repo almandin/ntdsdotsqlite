@@ -23,7 +23,7 @@ def get_domain_objects(ese_db):
     cur_object = domain_object
     parents = []
     while True:
-        # Si on est remonté au root object (guid '00'*16, name='$ROOT_OBJECT$\u0000'), on break
+        # If we got back to the root object (guid '00'*16, name='$ROOT_OBJECT$\u0000'), break
         parent_dnt = cur_object.get("PDNT_col")
         if parent_dnt == 2:
             break
