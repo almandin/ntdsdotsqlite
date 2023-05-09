@@ -3,6 +3,7 @@ from enum import IntFlag
 from pathlib import Path
 import binascii
 import sqlite3
+import re
 
 
 # transforms a guid from raw hex byte returned by dissect to a correct GUID string
@@ -30,6 +31,46 @@ def raw_to_sid(raw):
 # Translates microsoft duration/datetime format (intervals of 100ns) to python datetime object
 def hundredns_to_datetime(ns):
     return timedelta(seconds=ns / 10000000) + datetime(1601, 1, 1)
+
+
+# Function to get attribute names from the ESE database. Gets real column names
+# like "sAMAccountName" from attribute IDs like "ATTc131102". Way easier to work
+# with !
+# returns a dictionary with keys associating attribute ids and attribute names:
+#    {"AttributeID": "ATTc131102",  "Description": "Attm13", ...}
+# from https://github.com/xmco/ntds_extract/tree/main/Part-2-La-Datatable
+# Modified to be constant time and not O(n), n being datatable records - @almandin
+def get_ESE_column_names(ese_db):
+    # Attribute-Schema GUID, we only want to get displayName of attribute objects
+    attribute_dnt, _ = get_schema_object(ese_db, "bf967a80-0de6-11d0-a285-00aa003049e2")
+    reg = re.compile(r'\d+')
+
+    def find_complete_record_name(complete_record_names, partial_record_name):
+        for record_name in complete_record_names:
+            if str(partial_record_name) == ''.join(reg.findall(record_name)):
+                return record_name
+
+    datatable_col_names = []
+    output = {}
+    attributeID = 'ATTc131102'
+    lDAPDisplayName = 'ATTm131532'
+    datatable = ese_db.table("datatable")
+    msysobjects = ese_db.table("MSysObjects")
+    for record in msysobjects.records():  # Look for attribute ID (column) in the datatable
+        if record.Name.startswith('ATT'):
+            datatable_col_names.append(record.Name)
+    # Then, look the LDAP value corresponding to the attribute ID
+    for record in filter(
+        # objectCategory == Attribute-Schema DNT, useless to search in other records
+        lambda row: row.get("ATTb590606") == attribute_dnt,
+        datatable.records()
+    ):
+        complete_record_name = find_complete_record_name(
+            datatable_col_names, record.get(attributeID)
+        )
+        if complete_record_name:
+            output[record.get(lDAPDisplayName)] = complete_record_name
+    return output
 
 
 # Writes an initial sqlite database, with the chosen sql representation of an NTDS db.
@@ -60,7 +101,8 @@ def get_schema_object(ese_db, schemaGuid):
     datatable = ese_db.table("datatable")
     for row in datatable.records():
         if (
-            (guid := row.get(ese_db.column_names["schemaIDGUID"])) and
+            # schemaIDGUID
+            (guid := row.get("ATTk589972")) and
             guid.hex() == sguid
         ):
             return row.get("DNT_col"), row

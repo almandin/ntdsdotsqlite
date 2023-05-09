@@ -7,7 +7,6 @@
 import hashlib
 import random
 from binascii import unhexlify, hexlify
-from datetime import datetime
 from struct import unpack, pack
 from six import b, PY2
 
