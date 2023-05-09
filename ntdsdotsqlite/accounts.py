@@ -19,8 +19,6 @@ def account_generator(ese_db, schema_guid, sqlite_db, relations):
         pwdlastset = a.get(ese_db.column_names["pwdLastSet"])
         if pwdlastset:
             pwdlastset = hundredns_to_datetime(pwdlastset)
-        else:
-            pwdlastset = None
         if lastLogonTimestamp:
             lastLogonTimestamp = hundredns_to_datetime(lastLogonTimestamp)
         admincount = a.get(ese_db.column_names["adminCount"])
@@ -28,10 +26,11 @@ def account_generator(ese_db, schema_guid, sqlite_db, relations):
             admincount = 0
         spn = a.get(ese_db.column_names["servicePrincipalName"])
         accountExpires = a.get(ese_db.column_names["accountExpires"])
-        if accountExpires == 0 or accountExpires == 0x7FFFFFFFFFFFFFFF:
-            accountExpires = 0
-        else:
-            accountExpires = hundredns_to_datetime(accountExpires)
+        if accountExpires:
+            if accountExpires and accountExpires == 0 or accountExpires == 0x7FFFFFFFFFFFFFFF:
+                accountExpires = 0
+            else:
+                accountExpires = hundredns_to_datetime(accountExpires)
         uac = a.get(ese_db.column_names["userAccountControl"])
         account = {
             "id": a.get("DNT_col"), "description": a.get(ese_db.column_names["description"]),
