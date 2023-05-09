@@ -1,10 +1,11 @@
-from ntdsdotsqlite.utils import get_ESE_column_names, create_database
 from ntdsdotsqlite.containers import containers_generator
 from ntdsdotsqlite.accounts import account_generator
+from ntdsdotsqlite.column_names import column_names
 from ntdsdotsqlite.domain import get_domain_objects
-from ntdsdotsqlite.groups import group_generator
 from ntdsdotsqlite.orga_units import ou_generator
 from ntdsdotsqlite.decrypt import decrypt_sqlite
+from ntdsdotsqlite.groups import group_generator
+from ntdsdotsqlite.utils import create_database
 from ntdsdotsqlite.links import compute_links
 from dissect.esedb import EseDB
 import sqlite3
@@ -17,7 +18,6 @@ def run(ese_path, outpath, system_path):
     ese_db = EseDB(open(ese_path, "rb"))
     cursor = sqlite_db.cursor()
     # Getting column names
-    number_rows, column_names = get_ESE_column_names(ese_path)
     ese_db.column_names = column_names
     # Compute links
     print("Retrieving and storing links information ...")
