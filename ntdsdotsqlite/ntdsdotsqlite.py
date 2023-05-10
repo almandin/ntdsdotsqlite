@@ -14,7 +14,8 @@ import json
 def run(ese_path, outpath, system_path):
     create_database(outpath)
     sqlite_db = sqlite3.connect(outpath)
-    ese_db = EseDB(open(ese_path, "rb"))
+    fd = open(ese_path, "rb")
+    ese_db = EseDB(fd)
     cursor = sqlite_db.cursor()
     # Getting column names
     column_names = get_ESE_column_names(ese_db)
@@ -115,3 +116,4 @@ def run(ese_path, outpath, system_path):
         decrypt_sqlite(sqlite_db, ese_path, system_path)
     if sqlite_db:
         sqlite_db.close()
+    fd.close()

@@ -32,16 +32,18 @@ def account_generator(ese_db, schema_guid, sqlite_db, relations):
             else:
                 accountExpires = hundredns_to_datetime(accountExpires)
         uac = a.get(ese_db.column_names["userAccountControl"])
+        sid = a.get(ese_db.column_names["objectSid"])
+        guid = a.get(ese_db.column_names["objectGUID"])
         account = {
             "id": a.get("DNT_col"), "description": a.get(ese_db.column_names["description"]),
             "UAC": uac,
-            "SID": raw_to_sid(a.get(ese_db.column_names["objectSid"])),
+            "SID": raw_to_sid(sid) if sid else None,
             "samaccountname": a.get(ese_db.column_names["sAMAccountName"]),
             # unix epoch or NULL if password never set
             "pwdLastSet": pwdlastset,
             "nthash": a.get(ese_db.column_names["unicodePwd"]),
             "commonname": a.get(ese_db.column_names["cn"]),
-            "GUID": raw_to_guid(a.get(ese_db.column_names["objectGUID"])),
+            "GUID": raw_to_guid(guid) if guid else None,
             "adminCount": admincount,
             "displayName": a.get(ese_db.column_names["displayName"]),
             "UPN": a.get(ese_db.column_names["userPrincipalName"]),
@@ -67,12 +69,17 @@ def account_generator(ese_db, schema_guid, sqlite_db, relations):
                 account["SPN"] = json.dumps(spn)
             else:
                 print(f"SPN type unknown : {spn} - {type(spn)}")
+                print(account)
                 exit(1)
-        uac_flags = {
-            k.name: True if uac & k.value else False for k in UAC_FLAGS
-        }
-        account["uac_flags"] = json.dumps(uac_flags)
-        account["isDisabled"] = uac_flags["ACCOUNTDISABLE"]
+        if uac:
+            uac_flags = {
+                k.name: True if uac & k.value else False for k in UAC_FLAGS
+            }
+            account["uac_flags"] = json.dumps(uac_flags)
+            account["isDisabled"] = uac_flags["ACCOUNTDISABLE"]
+        else:
+            account["uac_flags"] = None
+            account["isDisabled"] = None
         # Generate Distinguished Name
         cur = sqlite_db.cursor()
         parent_dnt = a.get("PDNT_col")
@@ -83,9 +90,12 @@ def account_generator(ese_db, schema_guid, sqlite_db, relations):
             res = res.fetchone()
         account["dn"] = "CN=" + escape_dn_chars(account["commonname"]) + "," + res[0]
         primaryGroup = a.get(ese_db.column_names["primaryGroupID"])
-        res = cur.execute(f"SELECT id, SID from groups WHERE SID LIKE '%-{primaryGroup}'")
-        res = res.fetchone()
-        account["primaryGroup"] = res[0]
+        if primaryGroup:
+            res = cur.execute(f"SELECT id, SID from groups WHERE SID LIKE '%-{primaryGroup}'")
+            res = res.fetchone()
+            account["primaryGroup"] = res[0]
+        else:
+            account["primaryGroup"] = None
         # manage groups membership
         links_list = relations[account["id"]]
         account["links"] = json.dumps(links_list)
