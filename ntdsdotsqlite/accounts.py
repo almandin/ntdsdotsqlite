@@ -88,7 +88,11 @@ def account_generator(ese_db, schema_guid, sqlite_db, relations):
         if res is None:
             res = cur.execute(f"SELECT dn FROM containers WHERE id={parent_dnt}")
             res = res.fetchone()
-        account["dn"] = "CN=" + escape_dn_chars(account["commonname"]) + "," + res[0]
+        if res:
+            account["dn"] = "CN=" + escape_dn_chars(account["commonname"]) + "," + res[0]
+        else:
+            print(f"Warning: The DN for the account {account['commonname']} could not be computed")
+            account["dn"] = None
         primaryGroup = a.get(ese_db.column_names["primaryGroupID"])
         if primaryGroup:
             res = cur.execute(f"SELECT id, SID from groups WHERE SID LIKE '%-{primaryGroup}'")

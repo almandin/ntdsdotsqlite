@@ -109,6 +109,19 @@ def get_schema_object(ese_db, schemaGuid):
     return None, None
 
 
+class TRUST_FLAGS(IntFlag):
+    NON_TRANSITIVE = 0x1
+    UPLEVEL_ONLY = 0x2
+    QUARANTINED_DOMAIN = 0x4
+    FOREST_TRANSITIVE = 0x8
+    CROSS_ORGANIZATION = 0x10
+    WITHIN_FOREST = 0x20
+    TREAT_AS_EXTERNAL = 0x40
+    USES_RC4_ENCRYPTION = 0x80
+    CROSS_ORGANIZATION_NO_TGT_DELEGATION = 0x200
+    PIM_TRUST = 0x400
+
+
 class UAC_FLAGS(IntFlag):
     SCRIPT = 0x0001
     ACCOUNTDISABLE = 0x0002

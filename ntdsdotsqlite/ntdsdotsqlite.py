@@ -4,6 +4,7 @@ from ntdsdotsqlite.accounts import account_generator
 from ntdsdotsqlite.domain import get_domain_objects
 from ntdsdotsqlite.orga_units import ou_generator
 from ntdsdotsqlite.decrypt import decrypt_sqlite
+from ntdsdotsqlite.trusts import trust_generator
 from ntdsdotsqlite.groups import group_generator
 from ntdsdotsqlite.links import compute_links
 from dissect.esedb import EseDB
@@ -110,6 +111,17 @@ def run(ese_path, outpath, system_path):
         )
     """
     cursor.executemany(stmt, machines_iter)
+    sqlite_db.commit()
+    # Insert trust information
+    print("Retrieving trust information with other domains...")
+    trusts_iter = trust_generator(ese_db)
+    stmt = """
+        INSERT INTO trusted_domains VALUES (
+        :id, :commonname, :name, :trustAttributes, :trustDirection, :trustPartner, :trustType,
+        :attributeFlags
+        )
+    """
+    cursor.executemany(stmt, trusts_iter)
     sqlite_db.commit()
     if system_path:
         print("Decrypting stuff with SYSTEM hive ...")

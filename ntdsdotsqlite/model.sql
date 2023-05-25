@@ -116,3 +116,14 @@ CREATE TABLE containers (
     dn TEXT,
     isDeleted BOOLEAN
 );
+
+CREATE TABLE trusted_domains (
+    id INTEGER PRIMARY KEY,
+    commonname TEXT,
+    name TEXT,
+    trustAttributes INTEGER,
+    trustDirection TEXT,
+    trustPartner TEXT,
+    trustType TEXT,
+    attributeFlags JSON
+ );

@@ -99,6 +99,19 @@ A table storing organizational units information (object class `Organization-Uni
 - `dn` (TEXT): The distinguished name of the OU (Ex. 'OU=ServiceAccounts,OU=BDE,OU=Tier 1,DC=windomain,DC=local').
 - `isDeleted` (BOOLEAN): A boolean to tell wether this object has been removed and is in the recycle bin.
 
+## Table `trusted_domains`
+
+A table to store information about trusted domains (object class `Trusted-Domain`). It has the following columns:
+
+- `id` (INTEGER): The object identifier in the NTDS database.
+- `commonname` (TEXT): The common name of the related other domain.
+- `name` (TEXT): The "name" of the related other domain (not sure how it should be different from the common name 🤷).
+- `trustAttributes` (INTEGER): The value of the Trust-Attributes attribute.
+- `trustDirection` (TEXT): The direction of the trust relation, either `disabled` if the trust relation is disabled, `inbound`, `outbound` or `bidirectional`.
+- `trustPartner` (TEXT): The full domain name of the related trust domain (just like cn and name but trustPartner is supposed to hold the entire domain name).
+- `trustType` (TEXT): The type of the trust, either `downlevel`, `uplevel`, `MIT` or `DCE` (See the [Microsoft Documentation](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/36565693-b5e4-4f37-b0a8-c1b12138e18e) for more details).
+- `attributeFlags` (JSON): A dictionary of attribute flags held in the the `trustAttributes` integer, but parsed to be easily accessed (contains information about transitivity for example).
+
 ## Table ???
 
 The process of adding object classes and attributes is quite straightforward if these are not complex references to other intricate stuff. If you need something else which is not retrieved yet, open an issue or a PR ! There is basically one python file for each object class parsed. Objects are retrieved based on their `objectCategory` attributed which is linked to categories based on their `SchemaIDGUID` attribute. The full list is available in the Microsoft documentation [here](https://learn.microsoft.com/en-us/windows/win32/adschema/classes).

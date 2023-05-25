@@ -33,7 +33,11 @@ def ou_generator(ese_db):
             # if $ROOT_OBJECT" is reached or the current object is not an OU anymore
             if parent_dnt == domain_id:
                 break
-            parent = ous[parent_dnt]
+            try:
+                parent = ous[parent_dnt]
+            except KeyError:
+                print(f"Warning: the OU {ou_object['name']} has a missing parent in its path...")
+                break
             cur_object = parent
             name = parent.get(ese_db.column_names["name"])
             dn_prefix += "," + "OU=" + escape_dn_chars(name)
