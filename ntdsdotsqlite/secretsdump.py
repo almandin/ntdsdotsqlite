@@ -348,11 +348,9 @@ class NTDSHashes:
                     plainText = self.__cryptoCommon.decryptAES(self.__PEK[int(pekIndex[8:10])],
                                                                cipherText['EncryptedHash'][4:],
                                                                cipherText['KeyMaterial'])
-                    haveInfo = True
                 else:
                     plainText = self.__removeRC4Layer(cipherText)
-                    haveInfo = True
-
+                haveInfo = len(plainText) > 0x6f + 2 + 4
         if haveInfo:
             answers = []
             try:

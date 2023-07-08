@@ -29,6 +29,18 @@ This table only has one record representing the domain object (object class `Dom
 - `minPwdAge` (INTEGER): The minPwdAge attribute of the domain **in seconds** (Ex. 86400).
 - `dn` (TEXT): The distinguished name of the domain (Ex. 'DC=windomain,DC=local')
 
+## Table `domain_dns`
+
+This table contains all `domainDNS` records, not only the one representing the main domain. It has information in common with the `domain` table, but it contains every DNS zone, not only the main.
+
+- `id` (INTEGER): The identifier of the object in the NTDS database (Ex. 2042).
+- - `name` (TEXT): The full name of the domain zone (Example: 'windomain.local').
+- `netbiosname` (TEXT): The NBT Name of the domain zone (Example: 'WINDOMAIN')
+- `GUID` (TEXT): The GUID of the domain zone (Ex. '822850bc-e868-4e83-bbb1-9f8fcde73355').
+- `gplink` (TEXT): The GPLink attribute of the domain zone.
+- `SID` (TEXT): The SID of the domain zone (Ex. 'S-1-5-21-2834339972-2568791593-173547513').
+- `dn` (TEXT): The distinguished name of the domain zone (Ex. 'DC=windomain,DC=local')
+
 ## Table `user_accounts`
 
 This table stores user accounts (object class `Person`). It has the following columns:
@@ -64,7 +76,6 @@ This table stores user accounts (object class `Person`). It has the following co
 - `isDeleted` (BOOLEAN): A boolean to indicate if this object has been deleted and is in the recycle bin.
 - `primaryGroup` (INTEGER): The primary group of this account as an INTEGER foreign key to the `groups` table.
 - `memberOf` (JSON): A JSON list of group identifiers in the `groups` table this account is member of. Ex. [4033, 4088, 4089, 4091, 4094]
-- `links` (JSON): A JSON list of object identifiers in the NDTS database this account is linked to. Can be groups but other objects altogether. These references objects are not necessarily stored in the sqlite database.
 - `isDisabled` (BOOLEAN): A shortcut to know wether the account is disabled or not (based on the user account control).
 
 ## Table `machine_accounts`
@@ -114,4 +125,4 @@ A table to store information about trusted domains (object class `Trusted-Domain
 
 ## Table ???
 
-The process of adding object classes and attributes is quite straightforward if these are not complex references to other intricate stuff. If you need something else which is not retrieved yet, open an issue or a PR ! There is basically one python file for each object class parsed. Objects are retrieved based on their `objectCategory` attributed which is linked to categories based on their `SchemaIDGUID` attribute. The full list is available in the Microsoft documentation [here](https://learn.microsoft.com/en-us/windows/win32/adschema/classes).
+The process of adding object classes and attributes is quite straightforward if these are not complex references to other intricate stuff. If you need something else which is not retrieved yet, open an issue or a PR ! There is basically one python file for each object class parsed. Objects are retrieved based on their class name directly ! The full list is available in the Microsoft documentation [here](https://learn.microsoft.com/en-us/windows/win32/adschema/classes).

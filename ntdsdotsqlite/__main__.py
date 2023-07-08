@@ -1,7 +1,6 @@
 from pathlib import Path
 import argparse
 
-
 from ntdsdotsqlite.ntdsdotsqlite import run
 
 

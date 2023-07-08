@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ntdsdotsqlite"
-version = "0.9.6"
+version = "1.0.0"
 description = "A small utility to get an SQLite  database from an NTDS.DIT file."
 authors = ["Virgile Jarry <virgile@mailbox.org>"]
 readme = "README.md"
@@ -13,6 +13,7 @@ documentation = "https://github.com/almandin/ntdsdotsqlite/README.md"
 python = "^3.9"
 dissect = {extras = ["ese"], version = "^3.5"}
 impacket = "^0.10"
+tqdm = "^4.65.0"
 
 [build-system]
 requires = ["poetry-core"]

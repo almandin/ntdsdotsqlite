@@ -15,6 +15,16 @@ CREATE TABLE domains (
     dn TEXT
 );
 
+CREATE TABLE domain_dns (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    netbiosname TEXT,
+    GUID TEXT,
+    gplink TEXT,
+    SID TEXT,
+    dn TEXT
+);
+
 CREATE TABLE user_accounts (
     id INTEGER PRIMARY KEY,
     nthash BLOB,
@@ -43,7 +53,6 @@ CREATE TABLE user_accounts (
     isDeleted BOOLEAN,
     primaryGroup INTEGER,
     memberOf JSON,
-    links JSON,
     isDisabled BOOLEAN,
     FOREIGN KEY (id) REFERENCES domains (domain),
     FOREIGN KEY (id) REFERENCES organizational_units (parent_OU),
@@ -90,7 +99,6 @@ CREATE TABLE machine_accounts (
     dn TEXT,
     isDeleted BOOLEAN,
     primaryGroup INTEGER,
-    links JSON,
     isDisabled BOOLEAN,
     FOREIGN KEY (id) REFERENCES domains (domain),
     FOREIGN KEY (id) REFERENCES organizational_units (parent_OU),

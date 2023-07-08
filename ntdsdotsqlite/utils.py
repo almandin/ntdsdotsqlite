@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
+from collections import defaultdict
 from enum import IntFlag
 from pathlib import Path
-import binascii
 import sqlite3
-import re
 
 
 # transforms a guid from raw hex byte returned by dissect to a correct GUID string
@@ -33,46 +32,6 @@ def hundredns_to_datetime(ns):
     return timedelta(seconds=ns / 10000000) + datetime(1601, 1, 1)
 
 
-# Function to get attribute names from the ESE database. Gets real column names
-# like "sAMAccountName" from attribute IDs like "ATTc131102". Way easier to work
-# with !
-# returns a dictionary with keys associating attribute ids and attribute names:
-#    {"AttributeID": "ATTc131102",  "Description": "Attm13", ...}
-# from https://github.com/xmco/ntds_extract/tree/main/Part-2-La-Datatable
-# Modified to be constant time and not O(n), n being datatable records - @almandin
-def get_ESE_column_names(ese_db):
-    # Attribute-Schema GUID, we only want to get displayName of attribute objects
-    attribute_dnt, _ = get_schema_object(ese_db, "bf967a80-0de6-11d0-a285-00aa003049e2")
-    reg = re.compile(r'\d+')
-
-    def find_complete_record_name(complete_record_names, partial_record_name):
-        for record_name in complete_record_names:
-            if str(partial_record_name) == ''.join(reg.findall(record_name)):
-                return record_name
-
-    datatable_col_names = []
-    output = {}
-    attributeID = 'ATTc131102'
-    lDAPDisplayName = 'ATTm131532'
-    datatable = ese_db.table("datatable")
-    msysobjects = ese_db.table("MSysObjects")
-    for record in msysobjects.records():  # Look for attribute ID (column) in the datatable
-        if record.Name.startswith('ATT'):
-            datatable_col_names.append(record.Name)
-    # Then, look the LDAP value corresponding to the attribute ID
-    for record in filter(
-        # objectCategory == Attribute-Schema DNT, useless to search in other records
-        lambda row: row.get("ATTb590606") == attribute_dnt,
-        datatable.records()
-    ):
-        complete_record_name = find_complete_record_name(
-            datatable_col_names, record.get(attributeID)
-        )
-        if complete_record_name:
-            output[record.get(lDAPDisplayName)] = complete_record_name
-    return output
-
-
 # Writes an initial sqlite database, with the chosen sql representation of an NTDS db.
 def create_database(sqlite_path):
     # overwrite database if already existing
@@ -84,29 +43,6 @@ def create_database(sqlite_path):
     cursor.executescript(script)
     if db:
         db.close()
-
-
-# Returns the object in the database representing a schema object of the chosen schema GUID.
-# Its main use is to get its DNT that will be used by all subsequent objects as an objectCategory.
-def get_schema_object(ese_db, schemaGuid):
-    slices = [
-        slice(0, 8), slice(9, 13), slice(14, 18), slice(19, 23),
-        slice(24, 36)
-    ]
-    sguid = binascii.unhexlify(schemaGuid[slices[0]])[::-1].hex()
-    sguid += binascii.unhexlify(schemaGuid[slices[1]])[::-1].hex()
-    sguid += binascii.unhexlify(schemaGuid[slices[2]])[::-1].hex()
-    sguid += schemaGuid[slices[3]] + schemaGuid[slices[4]]
-
-    datatable = ese_db.table("datatable")
-    for row in datatable.records():
-        if (
-            # schemaIDGUID
-            (guid := row.get("ATTk589972")) and
-            guid.hex() == sguid
-        ):
-            return row.get("DNT_col"), row
-    return None, None
 
 
 class TRUST_FLAGS(IntFlag):
@@ -169,3 +105,13 @@ def escape_dn_chars(s):
         if s[0] == '#' or s[0] == ' ':
             s = ''.join(('\\', s))
     return s
+
+
+def compute_links(ese_db):
+    links = ese_db.table("link_table")
+    relations = defaultdict(list)
+    for link in links.records():
+        flink = link.get("link_DNT")
+        blink = link.get("backlink_DNT")
+        relations[blink].append(flink)
+    return relations

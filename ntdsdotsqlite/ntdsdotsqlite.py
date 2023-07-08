@@ -1,15 +1,17 @@
-from ntdsdotsqlite.utils import create_database, get_ESE_column_names
-from ntdsdotsqlite.containers import containers_generator
-from ntdsdotsqlite.accounts import account_generator
-from ntdsdotsqlite.domain import get_domain_objects
-from ntdsdotsqlite.orga_units import ou_generator
+from ntdsdotsqlite.organizationalunithandler import OrganizationalUnitHandler
+from ntdsdotsqlite.trusteddomainhandler import TrustedDomainHandler
+from ntdsdotsqlite.utils import create_database, compute_links
+from ntdsdotsqlite.containerhandler import ContainerHandler
+from ntdsdotsqlite.computerhandler import ComputerHandler
+from ntdsdotsqlite.personhandler import PersonHandler
+from ntdsdotsqlite.domainhandler import DomainHandler
+from ntdsdotsqlite.grouphandler import GroupHandler
 from ntdsdotsqlite.decrypt import decrypt_sqlite
-from ntdsdotsqlite.trusts import trust_generator
-from ntdsdotsqlite.groups import group_generator
-from ntdsdotsqlite.links import compute_links
+from collections import OrderedDict
 from dissect.esedb import EseDB
+from tqdm import tqdm
 import sqlite3
-import json
+import re
 
 
 def run(ese_path, outpath, system_path):
@@ -17,112 +19,101 @@ def run(ese_path, outpath, system_path):
     sqlite_db = sqlite3.connect(outpath)
     fd = open(ese_path, "rb")
     ese_db = EseDB(fd)
-    cursor = sqlite_db.cursor()
-    # Getting column names
-    column_names = get_ESE_column_names(ese_db)
-    ese_db.column_names = column_names
-    # Compute links
-    print("Retrieving and storing links information ...")
+    # Getting column names and base initialization stuff
+    attribute_dnt = None
+    class_dnt = None
+    # attributes_raw : {131532: "ATTm131532"}
+    attributes_raw = {}
+    # attributes: {"displayName": "ATTm131532"}
+    attributes = {}
+    # classes: {"person": 1511}
+    classes = {}
     link_relations = compute_links(ese_db)
-    # Get the domain
-    print("Retrieving the domain object ...")
-    domain = get_domain_objects(ese_db)
-    # Insert the domain record
-    stmt = (
-        "INSERT INTO domains VALUES(:id, :name, :netbios_name, :functional_level, :GUID, :gplink,"
-        ":SID, :machineAccountQuota, :maxPwdAge, :lockoutDuration, :minPwdLength, :pwdHistoryLength"
-        ", :minPwdAge, :dn)"
-    )
-    cursor.execute(stmt, domain)
+    # each class instance here are used to handle the addition of new objects in the sqlite
+    # these classes should have a handle(row) method and a callback() method. They are instantiated
+    # with the sqlite_db handle and the colnames dictionary. handle(row) is called live when a row
+    # is caught with the class set in key of this dictionary, the callback method is called after
+    # the ntds has been read entirely.
+    # This dict can be ordered to choose in which order the callbacks will be called !
+    caught_classes = OrderedDict({
+        "domainDNS": DomainHandler(sqlite_db, attributes, ese_db),
+        "trustedDomain": TrustedDomainHandler(sqlite_db, attributes, ese_db),
+        "group": GroupHandler(link_relations, sqlite_db, attributes, ese_db),
+        "container": ContainerHandler(sqlite_db, attributes, ese_db),
+        "organizationalUnit": OrganizationalUnitHandler(sqlite_db, attributes, ese_db),
+        "person": PersonHandler(link_relations, sqlite_db, attributes, ese_db),
+        "computer": ComputerHandler(sqlite_db, attributes, ese_db)
+    })
+    # "direct access" classes : {1511: SpecificHandler(...)}
+    da_classes = {}
+    attributeID_attr = "ATTc131102"
+    schemaGuid_attr = "ATTk589972"
+    lDAPDisplayName_attr = "ATTm131532"
+    objectCategory_attr = "ATTb590606"
+    attributeSchema_sguid = b"\x80\x7a\x96\xbf\xe6\x0d\xd0\x11\xa2\x85\x00\xaa\x00\x30\x49\xe2"
+    classSchema_sguid = b"\x83\x7a\x96\xbf\xe6\x0d\xd0\x11\xa2\x85\x00\xaa\x00\x30\x49\xe2"
+    d_reg = re.compile(r"(\d+$)")
+    msysobjects = ese_db.table("MSysObjects")
+    for row in msysobjects.records():
+        if (name := row.Name).startswith('ATT'):
+            res = d_reg.search(name)
+            attributes_raw[name[res.start():]] = name
+    datatable = ese_db.table("datatable")
+    cnt = 0
+    for row in datatable.records():
+        cnt += 1
+    datatable = ese_db.table("datatable")
+    for row in datatable.records():
+        sguid = row.get(schemaGuid_attr)
+        if sguid is not None and sguid == attributeSchema_sguid:
+            attribute_dnt = row.get("DNT_col")
+        if sguid is not None and sguid == classSchema_sguid:
+            class_dnt = row.get("DNT_col")
+        if attribute_dnt is not None and class_dnt is not None:
+            break
+    tmp_rows = []
+    store_tmp = True
+    for row in tqdm(datatable.records(), total=cnt):
+        obj_category = row.get(objectCategory_attr)
+        # if the row is an attribute name :
+        if obj_category == attribute_dnt:
+            try:
+                # match it with its value/raw name in msysobject and store it for later
+                attributes[row.get(lDAPDisplayName_attr)] = (
+                    attributes_raw[str(row.get(attributeID_attr))]
+                )
+            except KeyError:
+                # Here an "AttributeSchema" object has been seen with an attributeID which is not
+                # in the MSYSobjects table...
+                pass
+        # if the row is a class name :
+        if obj_category == class_dnt:
+            # store its DNT to use it later and match it against objectCategory attribute
+            class_name = row.get(lDAPDisplayName_attr)
+            dnt = row.get("DNT_col")
+            classes[class_name] = dnt
+            # if this class happens to be in the caught classes list, we keep a secondary
+            # index for later use with O(1) instead of O(len(caught_classes.keys()))
+            if class_name in caught_classes.keys():
+                da_classes[dnt] = caught_classes[class_name]
+                if len(da_classes.keys()) == len(caught_classes.keys()):
+                    store_tmp = False
+        # trigger the handle method of the associated handler if it exists
+        try:
+            da_classes[obj_category].handle(row)
+        except KeyError:
+            if store_tmp:
+                tmp_rows.append(row)
+    # manage the first "few" rows we saw when classes and attributes were not set up yet
+    for row in filter(lambda r: r.get(attributes["objectCategory"]) in da_classes.keys(), tmp_rows):
+        obj_category = row.get(objectCategory_attr)
+        da_classes[obj_category].handle(row)
     sqlite_db.commit()
-    # Insert container objects
-    print("Retrieving containers objects ...")
-    stmt = """
-        INSERT INTO containers VALUES (
-        :id, :name, :description, :cn, :parent, :dn, :is_deleted
-        )
-    """
-    cursor.executemany(stmt, containers_generator(ese_db, sqlite_db))
-    sqlite_db.commit()
-    # Insert ou objects records
-    stmt = """
-        INSERT INTO organizational_units VALUES (
-        :id, :name, :description, :parent, :dn, :isDeleted
-        )
-    """
-    print("Retrieving organizational units objects ...")
-    cursor.executemany(stmt, ou_generator(ese_db))
-    sqlite_db.commit()
-    # Insert group objects
-    print("Retrieving groups objects ...")
-    stmt = f"""
-        INSERT INTO groups VALUES (
-        :id, :name, :cn, :samaccountname, :SID, {domain['id']},
-        :is_deleted, :description, ""
-        )
-    """
-    cursor.executemany(stmt, group_generator(ese_db))
-    sqlite_db.commit()
-    # # Handle groups memberships with themselves
-    for row in cursor.execute("SELECT id FROM groups"):
-        memberOf = []
-        new_cur = sqlite_db.cursor()
-        for link in link_relations[row[0]]:
-            res = new_cur.execute(f"SELECT id FROM groups WHERE id={link}")
-            res = res.fetchone()
-            if res is not None:
-                memberOf.append(link)
-        new_cur.execute(
-            "UPDATE groups SET memberOf=? WHERE id=?", (json.dumps(memberOf), row[0])
-        )
-    sqlite_db.commit()
-    # Insert all user account records
-    print("Retrieving user accounts objects ...")
-    accounts_iter = account_generator(
-        ese_db, "bf967aa7-0de6-11d0-a285-00aa003049e2",
-        sqlite_db, link_relations
-    )
-    stmt = f"""
-        INSERT INTO user_accounts VALUES (
-        :id, :nthash, :lmhash, :UAC, :description, :lastLogonTimestamp,
-        :pwdLastSet, :adminCount, :displayName, :GUID, :SID, :SPN,
-        {domain['id']}, :UPN, :login, :samaccountname, :commonname,
-        :supplementalCredentials, :lmPwdHistory, :ntPwdHistory, :accountExpires,
-        :uac_flags, :parent, :dn, :isDeleted, :primaryGroup,
-        :memberOf, :links, :isDisabled
-        )
-    """
-    cursor.executemany(stmt, accounts_iter)
-    sqlite_db.commit()
-    # Insert all machine account records
-    print("Retrieving machine accounts objects ...")
-    machines_iter = account_generator(
-        ese_db, "bf967a86-0de6-11d0-a285-00aa003049e2",
-        sqlite_db, link_relations
-    )
-    stmt = f"""
-        INSERT INTO machine_accounts VALUES (
-        :id, :nthash, :lmhash, :UAC, :description, :lastLogonTimestamp,
-        :pwdLastSet, :adminCount, :displayName, :GUID, :SID, :SPN,
-        {domain['id']}, :UPN, :login, :samaccountname, :commonname,
-        :supplementalCredentials, :lmPwdHistory, :ntPwdHistory, :accountExpires,
-        :uac_flags, :parent, :dn, :isDeleted, :primaryGroup, :links,
-        :isDisabled
-        )
-    """
-    cursor.executemany(stmt, machines_iter)
-    sqlite_db.commit()
-    # Insert trust information
-    print("Retrieving trust information with other domains...")
-    trusts_iter = trust_generator(ese_db)
-    stmt = """
-        INSERT INTO trusted_domains VALUES (
-        :id, :commonname, :name, :trustAttributes, :trustDirection, :trustPartner, :trustType,
-        :attributeFlags
-        )
-    """
-    cursor.executemany(stmt, trusts_iter)
-    sqlite_db.commit()
+    # Trigger callbacks for all caught classes
+    for _, obj in caught_classes.items():
+        obj.callback()
+        sqlite_db.commit()
+    # Decrypt stuff if system hive provided
     if system_path:
         print("Decrypting stuff with SYSTEM hive ...")
         decrypt_sqlite(sqlite_db, ese_path, system_path)
