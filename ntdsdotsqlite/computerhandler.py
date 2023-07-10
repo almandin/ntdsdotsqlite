@@ -1,12 +1,18 @@
+from ntdsdotsqlite.decrypt import decrypt_hash, decrypt_history, decryptSupplementalInfo
 from ntdsdotsqlite.utils import hundredns_to_datetime, UAC_FLAGS
 from ntdsdotsqlite.utils import raw_to_guid, raw_to_sid
 from ntdsdotsqlite.basehandler import BaseHandler
 from ntdsdotsqlite.utils import escape_dn_chars
-
 import json
 
 
 class ComputerHandler(BaseHandler):
+    def __init__(self, sqlite_db, attributes, ese_db, dh):
+        super().__init__(sqlite_db, attributes, ese_db)
+        self.should_decrypt = dh.bootkey is not None
+        self.peklist = dh.pek
+        self.could_not_decrypt_yet = list()
+
     def handle(self, row):
         lastLogonTimestamp = row.get(self.attributes["lastLogonTimestamp"])
         pwdlastset = row.get(self.attributes["pwdLastSet"])
@@ -34,20 +40,27 @@ class ComputerHandler(BaseHandler):
             "samaccountname": row.get(self.attributes["sAMAccountName"]),
             # unix epoch or NULL if password never set
             "pwdLastSet": pwdlastset,
-            "nthash": row.get(self.attributes["unicodePwd"]),
+            "encrypted_nthash": row.get(self.attributes["unicodePwd"]),
+            "nthash": None,
             "commonname": row.get(self.attributes["cn"]),
             "GUID": raw_to_guid(guid) if guid else None,
             "adminCount": admincount,
             "displayName": row.get(self.attributes["displayName"]),
             "UPN": row.get(self.attributes["userPrincipalName"]),
-            "supplementalCredentials": row.get(self.attributes["supplementalCredentials"]),
+            "encrypted_supplementalCredentials": (
+                row.get(self.attributes["supplementalCredentials"])
+            ),
+            "supplementalCredentials": None,
             # unix epoch
             "lastLogonTimestamp": lastLogonTimestamp,
-            "lmPwdHistory": row.get(self.attributes["lmPwdHistory"]),
-            "ntPwdHistory": row.get(self.attributes["ntPwdHistory"]),
+            "encrypted_lmPwdHistory": row.get(self.attributes["lmPwdHistory"]),
+            "lmPwdHistory": None,
+            "encrypted_ntPwdHistory": row.get(self.attributes["ntPwdHistory"]),
+            "ntPwdHistory": None,
             "accountExpires": accountExpires,
             "SPN": spn,
-            "lmhash": row.get(self.attributes["dBCSPwd"]),
+            "encrypted_lmhash": row.get(self.attributes["dBCSPwd"]),
+            "lmhash": None,
             "parent": row.get("PDNT_col"),
             "isDeleted": row.get(self.attributes["isDeleted"]) == 1,
             "primaryGroup": row.get(self.attributes["primaryGroupID"])
@@ -74,14 +87,27 @@ class ComputerHandler(BaseHandler):
         else:
             account["uac_flags"] = None
             account["isDisabled"] = None
+        if self.should_decrypt:
+            try:
+                account["nthash"] = decrypt_hash(self.peklist, account, "nt")
+                account["lmhash"] = decrypt_hash(self.peklist, account, "lm")
+                account["lmPwdHistory"] = json.dumps(decrypt_history(self.peklist, account, "lm"))
+                account["ntPwdHistory"] = json.dumps(decrypt_history(self.peklist, account, "nt"))
+                account["supplementalCredentials"] = json.dumps(
+                    decryptSupplementalInfo(self.peklist, account)
+                )
+            except KeyError as e:
+                print(f"Could not decrypt user account {account['id']}")
+                print(e)
+                self.could_not_decrypt_yet.append(account)
         stmt = """
             INSERT INTO machine_accounts VALUES (
-            :id, :nthash, :lmhash, :UAC, :description, :lastLogonTimestamp,
-            :pwdLastSet, :adminCount, :displayName, :GUID, :SID, :SPN,
-            Null, :UPN, :login, :samaccountname, :commonname,
-            :supplementalCredentials, :lmPwdHistory, :ntPwdHistory, :accountExpires,
-            :uac_flags, :parent, Null, :isDeleted, :primaryGroup,
-            :isDisabled
+            :id, :encrypted_nthash, :nthash, :encrypted_lmhash, :lmhash, :UAC, :description,
+            :lastLogonTimestamp, :pwdLastSet, :adminCount, :displayName, :GUID, :SID, :SPN,
+            Null, :UPN, :login, :samaccountname, :commonname, :encrypted_supplementalCredentials,
+            :supplementalCredentials, :encrypted_lmPwdHistory, :lmPwdHistory,
+            :encrypted_ntPwdHistory, :ntPwdHistory, :accountExpires, :uac_flags, :parent, Null,
+            :isDeleted, :primaryGroup, :isDisabled
             )
         """
         self.sqlite_db.execute(stmt, account)
@@ -116,4 +142,20 @@ class ComputerHandler(BaseHandler):
                 f"SELECT id from groups WHERE SID LIKE '%-{primaryGroup}'"
                 "), dn=? WHERE id=?",
                 (domain_id, dn, uid)
+            )
+        # Decrypt users we could not decrypt previously
+        for account in self.could_not_decrypt_yet:
+            account["nthash"] = decrypt_hash(self.peklist, account, "nt")
+            account["lmhash"] = decrypt_hash(self.peklist, account, "lm")
+            account["lmPwdHistory"] = decrypt_history(self.peklist, account, "lm")
+            account["ntPwdHistory"] = decrypt_history(self.peklist, account, "nt")
+            account["supplementalCredentials"] = decryptSupplementalInfo(self.peklist, account)
+            self.sqlite_db.execute(
+                "UPDATE user_accounts set nthash=?, lmhash=?, ntPwdHistory=?, lmPwdHistory=? "
+                "supplementalCredentials=? WHERE id=?",
+                (
+                    account["nthash"], account["lmhash"], json.dumps(account["ntPwdHistory"]),
+                    json.dumps(account["lmPwdHistory"]),
+                    json.dumps(account["supplementalCredentials"]), account["id"]
+                )
             )

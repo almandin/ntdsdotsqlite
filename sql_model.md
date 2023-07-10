@@ -46,8 +46,10 @@ This table contains all `domainDNS` records, not only the one representing the m
 This table stores user accounts (object class `Person`). It has the following columns:
 
 - `id` (INTEGER): The identifier of the object in the NTDS databse (Ex. 2042).
-- `nthash` (BLOB or TEXT): The NT Hash (NTLM hash) of the account as a string if the SYSTEM hive is provided or the encrypted BLOB representing it (Ex. '31d6cfe0d16ae931b73c59d7e0c089c0' or binary data...).
-- `lmhash` (BLOB or TEXT): The LM hash of the account as a string if the SYSTEM hive is provided or the encrypted BLOB representing it (Ex. 'aad3b435b51404eeaad3b435b51404ee' or binary data...).)
+- `encrypted_nthash` (BLOB): The encrypted NT hash as a binary blob.
+- `nthash` (TEXT): The NT Hash (NTLM hash) of the account as a string if the SYSTEM hive is provided else None (Ex. '31d6cfe0d16ae931b73c59d7e0c089c0').
+- `encrypted_lmhash` (BLOB): The encrypted LM hash as a binary blob.
+- `lmhash` (TEXT): The LM hash of the account as a string if the SYSTEM hive is provided else None (Ex. 'aad3b435b51404eeaad3b435b51404ee').)
 - `UAC` (INTEGER): The user account control value as an integer (Ex. 4260352).
 - `description` (TEXT): The description of the account (Ex. 'Built-in account for guest access to the computer/domain').
 - `lastLogonTimestamp` (INTEGER): Timestamp **as a datetime representation** of the last time the account was used.
@@ -62,11 +64,14 @@ This table stores user accounts (object class `Person`). It has the following co
 - `login` (TEXT): The login of the account. It is either the left part of the UPN if it has one, or the samaccountname (Ex. 'FOO_BAR').
 - `samaccountname` (TEXT): The Sam Account Name of the account (Ex. 'FOO_BAR').
 - `commonname` (TEXT): The common name of the account (Ex. 'FOO_BAR').
-- `supplementalCredentials` (BLOB or JSON): Either an encrypted BLOB or a decrypted JSON list representing additional credentials stored in the object. These are mainly kerberos keys, or plaintext credentials when the flag `store password with reversible encryption` is set. It is a list of 2-tuples containing the type of key it represents, and the associated value.
+- `encrypted_supplementalCredentials` (BLOB): The encrypted supplemental credentials blob.
+- `supplementalCredentials` (JSON): Decrypted JSON list representing additional credentials stored in the object if the SYSTEM hive is provided, else None. These are mainly kerberos keys, or plaintext credentials when the flag `store password with reversible encryption` is set. It is a list of 2-tuples containing the type of key it represents, and the associated value.
     - Example: `[["aes256-cts-hmac-sha1-96", "2fbb870186116974c53a0a8ed472bdd78c277305e7174f540ce3239340a8f33f"], ["aes128-cts-hmac-sha1-96", "a62b241a5e02eef50503ce5efd7728f1"], ["des-cbc-md5", "badfa8e9cd0ee5ba"], ["cleartext", "hunter2"]]`.
-- `lmPwdHistory` (BLOB or JSON): Either an encrypted blob or a JSON list representing the history of LM hashes of the account.
+- `encrypted_lmPwdHistory` (BLOB): The encrypted attribute `lmPwdHistory`.
+- `lmPwdHistory` (JSON): JSON list representing the history of LM hashes of the account if the SYSTEM hive is provided else None.
     - Example: `["db6aaf42a0a9aa7818ab94e45e093787", "9216c6bb1c679145c44870b8ace24e98"]`
-- `ntPwdHistory` (BLOB or JSON): Either an encrypted blob or a JSON list representing the history of NT hashes of the account.
+- `encrypted_ntPwdHistory` (BLOB): The encrypted attribute `ntPwdHistory`.
+- `ntPwdHistory` (JSON): JSON list representing the history of NT hashes of the account if the SYSTEM hive is provided else None.
     - Example: `["4e9f909d3a0fe9b1a7c726f882573635", "32ebda198689b00ca142d270f7759f0d"]`
 - `accountExpires` (INTEGER): The date at which the account expires **as a datetime object representation**.
 - `UAC_flags` (JSON): A JSON object containing the value of each user account control flag.

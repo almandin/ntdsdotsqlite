@@ -6,7 +6,7 @@ from ntdsdotsqlite.computerhandler import ComputerHandler
 from ntdsdotsqlite.personhandler import PersonHandler
 from ntdsdotsqlite.domainhandler import DomainHandler
 from ntdsdotsqlite.grouphandler import GroupHandler
-from ntdsdotsqlite.decrypt import decrypt_sqlite
+from ntdsdotsqlite.decrypt import getBootKey
 from collections import OrderedDict
 from dissect.esedb import EseDB
 from tqdm import tqdm
@@ -29,20 +29,23 @@ def run(ese_path, outpath, system_path):
     # classes: {"person": 1511}
     classes = {}
     link_relations = compute_links(ese_db)
+    # catch the bootkey in the SYSTEM hive if any
+    bootkey = getBootKey(system_path) if system_path else None
     # each class instance here are used to handle the addition of new objects in the sqlite
     # these classes should have a handle(row) method and a callback() method. They are instantiated
     # with the sqlite_db handle and the colnames dictionary. handle(row) is called live when a row
     # is caught with the class set in key of this dictionary, the callback method is called after
     # the ntds has been read entirely.
     # This dict can be ordered to choose in which order the callbacks will be called !
+    dh = DomainHandler(sqlite_db, attributes, ese_db, bootkey)
     caught_classes = OrderedDict({
-        "domainDNS": DomainHandler(sqlite_db, attributes, ese_db),
+        "domainDNS": dh,
         "trustedDomain": TrustedDomainHandler(sqlite_db, attributes, ese_db),
         "group": GroupHandler(link_relations, sqlite_db, attributes, ese_db),
         "container": ContainerHandler(sqlite_db, attributes, ese_db),
         "organizationalUnit": OrganizationalUnitHandler(sqlite_db, attributes, ese_db),
-        "person": PersonHandler(link_relations, sqlite_db, attributes, ese_db),
-        "computer": ComputerHandler(sqlite_db, attributes, ese_db)
+        "person": PersonHandler(link_relations, sqlite_db, attributes, ese_db, dh),
+        "computer": ComputerHandler(sqlite_db, attributes, ese_db, dh)
     })
     # "direct access" classes : {1511: SpecificHandler(...)}
     da_classes = {}
@@ -72,6 +75,7 @@ def run(ese_path, outpath, system_path):
         if attribute_dnt is not None and class_dnt is not None:
             break
     tmp_rows = []
+
     store_tmp = True
     for row in tqdm(datatable.records(), total=cnt):
         obj_category = row.get(objectCategory_attr)
@@ -113,10 +117,6 @@ def run(ese_path, outpath, system_path):
     for _, obj in caught_classes.items():
         obj.callback()
         sqlite_db.commit()
-    # Decrypt stuff if system hive provided
-    if system_path:
-        print("Decrypting stuff with SYSTEM hive ...")
-        decrypt_sqlite(sqlite_db, ese_path, system_path)
     if sqlite_db:
         sqlite_db.close()
     fd.close()

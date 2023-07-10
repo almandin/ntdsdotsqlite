@@ -1,84 +1,290 @@
-from ntdsdotsqlite import secretsdump
-import json
+from Cryptodome.Cipher import DES, ARC4, AES
+from impacket.structure import Structure
+from binascii import unhexlify, hexlify
+from impacket.dcerpc.v5 import samr
+from impacket import winregistry
+from hashlib import md5
+from struct import pack
+from six import b
 
 
-def decrypt_sqlite(sqlite_db, ntds_path, system_hive_path):
-    local_operations = secretsdump.LocalOperations(system_hive_path)
+class PEKLIST_ENC(Structure):
+    structure = (
+        ('Header', '8s=b""'),
+        ('KeyMaterial', '16s=b""'),
+        ('EncryptedPek', ':'),
+    )
 
-    dumper = secretsdump.NTDSHashes(ntds_path, local_operations.getBootKey())
-    cur = sqlite_db.cursor()
-    cur.execute("ALTER TABLE user_accounts RENAME COLUMN nthash TO _encrypted_nthash")
-    cur.execute("ALTER TABLE user_accounts RENAME COLUMN lmhash TO _encrypted_lmhash")
-    cur.execute("ALTER TABLE user_accounts RENAME COLUMN lmPwdHistory TO _encrypted_lmPwdHistory")
-    cur.execute("ALTER TABLE user_accounts RENAME COLUMN ntPwdHistory TO _encrypted_ntPwdHistory")
-    cur.execute(
-        "ALTER TABLE user_accounts RENAME COLUMN supplementalCredentials TO "
-        "_encrypted_supplementalCredentials"
+
+class PEKLIST_PLAIN(Structure):
+    structure = (
+        ('Header', '32s=b""'),
+        ('DecryptedPek', ':'),
     )
-    cur.execute("ALTER TABLE machine_accounts RENAME COLUMN nthash TO _encrypted_nthash")
-    cur.execute("ALTER TABLE machine_accounts RENAME COLUMN lmhash TO _encrypted_lmhash")
-    cur.execute(
-        "ALTER TABLE machine_accounts RENAME COLUMN lmPwdHistory TO _encrypted_lmPwdHistory"
+
+
+class PEK_KEY(Structure):
+    structure = (
+        ('Header', '1s=b""'),
+        ('Padding', '3s=b""'),
+        ('Key', '16s=b""'),
     )
-    cur.execute(
-        "ALTER TABLE machine_accounts RENAME COLUMN ntPwdHistory TO _encrypted_ntPwdHistory"
+
+
+class CRYPTED_HASH(Structure):
+    structure = (
+        ('Header', '8s=b""'),
+        ('KeyMaterial', '16s=b""'),
+        ('EncryptedHash', '16s=b""'),
     )
-    cur.execute(
-        "ALTER TABLE machine_accounts RENAME COLUMN supplementalCredentials TO "
-        "_encrypted_supplementalCredentials"
+
+
+class CRYPTED_HASHW16(Structure):
+    structure = (
+        ('Header', '8s=b""'),
+        ('KeyMaterial', '16s=b""'),
+        ('Unknown', '<L=0'),
+        ('EncryptedHash', ':'),
     )
-    sqlite_db.commit()
-    cur.execute("ALTER TABLE user_accounts ADD COLUMN nthash TEXT")
-    cur.execute("ALTER TABLE user_accounts ADD COLUMN lmhash TEXT")
-    cur.execute("ALTER TABLE user_accounts ADD COLUMN lmPwdHistory TEXT")
-    cur.execute("ALTER TABLE user_accounts ADD COLUMN ntPwdHistory TEXT")
-    cur.execute("ALTER TABLE user_accounts ADD COLUMN supplementalCredentials JSON")
-    cur.execute("ALTER TABLE machine_accounts ADD COLUMN nthash TEXT")
-    cur.execute("ALTER TABLE machine_accounts ADD COLUMN lmhash TEXT")
-    cur.execute("ALTER TABLE machine_accounts ADD COLUMN lmPwdHistory TEXT")
-    cur.execute("ALTER TABLE machine_accounts ADD COLUMN ntPwdHistory TEXT")
-    cur.execute("ALTER TABLE machine_accounts ADD COLUMN supplementalCredentials JSON")
-    sqlite_db.commit()
-    for result in dumper.dump():
-        # result :
-        # {
-        #   'username': 'TESTCOMPUTER$',
-        #   'guid': 'd6ec4c6e-ecc2-4774-a068-9732b6bc4a58',
-        #   'lmhash': 'aad3b435b51404eeaad3b435b51404ee',
-        #   'nthash': 'c1653d2f7b46f97ea64453820add3f8a',
-        #   'lmhistory': ['95e9dfa765098631fadb7a01acca7c7a', '8cdcaa8af553362e6631ab6c2ebbb9fd'],
-        #   'nthistory': ['c1653d2f7b46f97ea64453820add3f8a', '7334e9d326b556d863040fa9d186426c'],
-        #   'supplemental_credentials': [
-        #       (
-        #           'aes256-cts-hmac-sha1-96',
-        #           '9e14bb28a510db728ce168fe3271a31dce8438cd623ad67f161f87f8053c70c3'
-        #       ),
-        #       ('aes128-cts-hmac-sha1-96', '071d2a973d5acb8ebd60eff7af5d1fdb'),
-        #       ('des-cbc-md5', '04b3e0c12f8620fb')
-        #   ]
-        # }
-        result["supplemental_credentials"] = json.dumps(result["supplemental_credentials"])
-        result["lmhistory"] = json.dumps(result["lmhistory"])
-        result["nthistory"] = json.dumps(result["nthistory"])
-        cur.execute(
-            "UPDATE user_accounts SET nthash = :nthash, "
-            "lmhash = :lmhash, "
-            "supplementalCredentials = :supplemental_credentials, "
-            "lmPwdHistory = :lmhistory, "
-            "ntPwdHistory = :nthistory "
-            "WHERE GUID = :guid",
-            result
-        )
-        # If no row has been updated, it was a machine account
-        if cur.rowcount == 0:
-            cur.execute(
-                "UPDATE machine_accounts SET nthash = :nthash, "
-                "lmhash = :lmhash, "
-                "supplementalCredentials = :supplemental_credentials, "
-                "lmPwdHistory = :lmhistory, "
-                "ntPwdHistory = :nthistory "
-                "WHERE GUID = :guid",
-                result
+
+
+class CRYPTED_HISTORY(Structure):
+    structure = (
+        ('Header', '8s=b""'),
+        ('KeyMaterial', '16s=b""'),
+        ('EncryptedHash', ':'),
+    )
+
+
+class CRYPTED_BLOB(Structure):
+    structure = (
+        ('Header', '8s=b""'),
+        ('KeyMaterial', '16s=b""'),
+        ('EncryptedHash', ':'),
+    )
+
+
+KERBEROS_TYPE = {
+    1: 'dec-cbc-crc',
+    3: 'des-cbc-md5',
+    17: 'aes128-cts-hmac-sha1-96',
+    18: 'aes256-cts-hmac-sha1-96',
+    0xffffff74: 'rc4_hmac',
+}
+
+
+def getBootKey(systemHivePath):
+    # Local Version whenever we are given the files directly
+    bootKey = b''
+    tmpKey = b''
+    winreg = winregistry.Registry(systemHivePath, False)
+    # We gotta find out the Current Control Set
+    currentControlSet = winreg.getValue('\\Select\\Current')[1]
+    currentControlSet = "ControlSet%03d" % currentControlSet
+    for key in ['JD', 'Skew1', 'GBG', 'Data']:
+        ans = winreg.getClass('\\%s\\Control\\Lsa\\%s' % (currentControlSet, key))
+        digit = ans[:16].decode('utf-16le')
+        tmpKey = tmpKey + b(digit)
+
+    transforms = [8, 5, 4, 2, 11, 9, 13, 3, 0, 6, 1, 12, 14, 10, 15, 7]
+
+    tmpKey = unhexlify(tmpKey)
+
+    for i in range(len(tmpKey)):
+        bootKey += tmpKey[transforms[i]:transforms[i] + 1]
+    return bootKey
+
+
+def decryptAES(key, value, iv=b'\x00'*16):
+    plainText = b''
+    if iv != b'\x00'*16:
+        aes256 = AES.new(key, AES.MODE_CBC, iv)
+
+    for index in range(0, len(value), 16):
+        if iv == b'\x00'*16:
+            aes256 = AES.new(key, AES.MODE_CBC, iv)
+        cipherBuffer = value[index:index+16]
+        # Pad buffer to 16 bytes
+        if len(cipherBuffer) < 16:
+            cipherBuffer += b'\x00' * (16-len(cipherBuffer))
+        plainText += aes256.decrypt(cipherBuffer)
+
+    return plainText
+
+
+def removeRC4Layer(peklist, cryptedHash):
+    md5h = md5()
+    pekIndex = hexlify(cryptedHash['Header'])
+    md5h.update(peklist[int(pekIndex[8:10])])
+    md5h.update(cryptedHash['KeyMaterial'])
+    tmpKey = md5h.digest()
+    rc4 = ARC4.new(tmpKey)
+    plainText = rc4.encrypt(cryptedHash['EncryptedHash'])
+
+    return plainText
+
+
+def removeDESLayer(cryptedHash, rid):
+    Key1, Key2 = DESderiveKey(int(rid))
+    Crypt1 = DES.new(Key1, DES.MODE_ECB)
+    Crypt2 = DES.new(Key2, DES.MODE_ECB)
+    decryptedHash = Crypt1.decrypt(cryptedHash[:8]) + Crypt2.decrypt(cryptedHash[8:])
+    return decryptedHash
+
+
+def DESderiveKey(baseKey):
+    key = pack('<L', baseKey)
+    key1 = [key[0], key[1], key[2], key[3], key[0], key[1], key[2]]
+    key2 = [key[3], key[0], key[1], key[2], key[3], key[0], key[1]]
+    return transformKey(bytes(key1)), transformKey(bytes(key2))
+
+
+def transformKey(InputKey):
+    OutputKey = []
+    OutputKey.append(chr(ord(InputKey[0:1]) >> 0x01))
+    OutputKey.append(chr(((ord(InputKey[0:1]) & 0x01) << 6) | (ord(InputKey[1:2]) >> 2)))
+    OutputKey.append(chr(((ord(InputKey[1:2]) & 0x03) << 5) | (ord(InputKey[2:3]) >> 3)))
+    OutputKey.append(chr(((ord(InputKey[2:3]) & 0x07) << 4) | (ord(InputKey[3:4]) >> 4)))
+    OutputKey.append(chr(((ord(InputKey[3:4]) & 0x0F) << 3) | (ord(InputKey[4:5]) >> 5)))
+    OutputKey.append(chr(((ord(InputKey[4:5]) & 0x1F) << 2) | (ord(InputKey[5:6]) >> 6)))
+    OutputKey.append(chr(((ord(InputKey[5:6]) & 0x3F) << 1) | (ord(InputKey[6:7]) >> 7)))
+    OutputKey.append(chr(ord(InputKey[6:7]) & 0x7F))
+
+    for i in range(8):
+        OutputKey[i] = chr((ord(OutputKey[i]) << 1) & 0xfe)
+
+    return b("".join(OutputKey))
+
+
+def decrypt_hash(peklist, account, key):
+    if key == "nt":
+        _key = "encrypted_nthash"
+        default = "31d6cfe0d16ae931b73c59d7e0c089c0"
+    else:
+        _key = "encrypted_lmhash"
+        default = "aad3b435b51404eeaad3b435b51404ee"
+    if account[_key] is not None:
+        rid = account["SID"].split('-')[-1]
+        encryptedHash = CRYPTED_HASH(account[_key])
+        if encryptedHash['Header'][:4] == b'\x13\x00\x00\x00':
+            # Win2016 TP4 decryption is different
+            encryptedHash = CRYPTED_HASHW16(account[_key])
+            pekIndex = hexlify(encryptedHash['Header'])
+            tmpNTHash = decryptAES(
+                peklist[int(pekIndex[8:10])],
+                encryptedHash['EncryptedHash'][:16],
+                encryptedHash['KeyMaterial']
             )
-    sqlite_db.commit()
-    dumper.finish()
+        else:
+            tmpNTHash = removeRC4Layer(peklist, encryptedHash)
+        return hexlify(removeDESLayer(tmpNTHash, rid))
+    else:
+        return default
+
+
+def decrypt_history(peklist, account, key):
+    history = list()
+    if key == "nt":
+        if account["encrypted_ntPwdHistory"] is None:
+            return list()
+        rid = account["SID"].split('-')[-1]
+        encryptedHistory = CRYPTED_HISTORY(account["encrypted_ntPwdHistory"])
+        if encryptedHistory['Header'][:4] == b'\x13\x00\x00\x00':
+            encryptedHistory = CRYPTED_HASHW16(account["encrypted_ntPwdHistory"])
+            pekIndex = hexlify(encryptedHistory['Header'])
+            tmpHistory = decryptAES(
+                peklist[int(pekIndex[8:10])],
+                encryptedHistory['EncryptedHash'],
+                encryptedHistory['KeyMaterial']
+            )
+        else:
+            tmpNTHistory = removeRC4Layer(encryptedHistory)
+            for i in range(0, len(tmpNTHistory) // 16):
+                NTHash = removeDESLayer(tmpNTHistory[i * 16:(i + 1) * 16], rid)
+                history.append(NTHash)
+        return history
+    else:  # key = lm
+        if account["encrypted_lmPwdHistory"] is None:
+            return list()
+        rid = account["SID"].split('-')[-1]
+        encryptedHistory = CRYPTED_HISTORY(account["encrypted_lmPwdHistory"])
+        tmpHistory = removeRC4Layer(peklist, encryptedHistory)
+        for i in range(0, len(tmpHistory) // 16):
+            hash = removeDESLayer(tmpHistory[i * 16:(i + 1) * 16], rid)
+            history.append(bytes.hex(hash))
+        return history
+
+
+def decryptSupplementalInfo(peklist, account):
+    # This is based on [MS-SAMR] 2.2.10 Supplemental Credentials Structures
+    haveInfo = False
+    encsuppcreds = account["encrypted_supplementalCredentials"]
+    if encsuppcreds is not None:
+        if len(encsuppcreds) > 24:
+            cipherText = CRYPTED_BLOB(encsuppcreds)
+            if cipherText['Header'][:4] == b'\x13\x00\x00\x00':
+                pekIndex = hexlify(cipherText['Header'])
+                plainText = decryptAES(
+                    peklist[int(pekIndex[8:10])],
+                    cipherText['EncryptedHash'][4:],
+                    cipherText['KeyMaterial']
+                )
+            else:
+                plainText = removeRC4Layer(cipherText)
+            haveInfo = len(plainText) > 0x6f + 2 + 4
+    if haveInfo:
+        answers = []
+        try:
+            userProperties = samr.USER_PROPERTIES(plainText)
+        except:
+            return list()
+        propertiesData = userProperties['UserProperties']
+        for propertyCount in range(userProperties['PropertyCount']):
+            userProperty = samr.USER_PROPERTY(propertiesData)
+            propertiesData = propertiesData[len(userProperty):]
+            # For now, we will only process Newer Kerberos Keys and CLEARTEXT
+            if userProperty['PropertyName'].decode('utf-16le') == 'Primary:Kerberos-Newer-Keys':
+                propertyValueBuffer = unhexlify(userProperty['PropertyValue'])
+                kerbStoredCredentialNew = samr.KERB_STORED_CREDENTIAL_NEW(propertyValueBuffer)
+                data = kerbStoredCredentialNew['Buffer']
+                kerb_keys = []
+                for credential in range(kerbStoredCredentialNew['CredentialCount']):
+                    keyDataNew = samr.KERB_KEY_DATA_NEW(data)
+                    data = data[len(keyDataNew):]
+                    keyValue = (
+                        propertyValueBuffer[keyDataNew['KeyOffset']:][:keyDataNew['KeyLength']]
+                    )
+
+                    if keyDataNew['KeyType'] in KERBEROS_TYPE:
+                        kerb_keys.append(
+                            (
+                                KERBEROS_TYPE[keyDataNew['KeyType']],
+                                hexlify(keyValue).decode('utf-8')
+                            )
+                        )
+                    else:
+                        kerb_keys.append(
+                            (
+                                hex(keyDataNew['KeyType']),
+                                hexlify(keyValue).decode('utf-8')
+                            )
+                        )
+                answers += kerb_keys
+            elif userProperty['PropertyName'].decode('utf-16le') == 'Primary:CLEARTEXT':
+                # [MS-SAMR] 3.1.1.8.11.5 Primary:CLEARTEXT Property
+                # This credential type is the cleartext password. The value format is the
+                # UTF-16 encoded cleartext password.
+                try:
+                    answers.append(
+                        (
+                            "cleartext",
+                            unhexlify(userProperty['PropertyValue']).decode('utf-16le')
+                        )
+                    )
+                except UnicodeDecodeError:
+                    # This could be because we're decoding a machine password. Printing it hex
+                    answers.append(("cleartext", userProperty['PropertyValue'].decode('utf-8')))
+            return answers
+    else:
+        # no supplemental info
+        return []

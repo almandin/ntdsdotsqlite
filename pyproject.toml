@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ntdsdotsqlite"
-version = "1.0.0"
+version = "1.1.0"
 description = "A small utility to get an SQLite  database from an NTDS.DIT file."
 authors = ["Virgile Jarry <virgile@mailbox.org>"]
 readme = "README.md"

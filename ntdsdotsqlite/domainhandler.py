@@ -1,12 +1,20 @@
 from ntdsdotsqlite.utils import raw_to_guid, raw_to_sid
 from ntdsdotsqlite.basehandler import BaseHandler
 from ntdsdotsqlite.utils import escape_dn_chars
+from ntdsdotsqlite.decrypt import (
+    decryptAES, PEKLIST_ENC, PEKLIST_PLAIN, PEK_KEY
+)
+from Cryptodome.Cipher import ARC4
+from struct import unpack
+from hashlib import md5
 
 
 class DomainHandler(BaseHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, sqlite_db, attributes, ese_db, bootkey):
+        super().__init__(sqlite_db, attributes, ese_db)
         self.objects = []
+        self.bootkey = bootkey
+        self.pek = list()
 
     def handle(self, row):
         func_levels = {
@@ -57,6 +65,48 @@ class DomainHandler(BaseHandler):
                     ":minPwdLength, :pwdHistoryLength, :minPwdAge, :dn)"
                 )
                 self.sqlite_db.execute(stmt, domain)
+                # extract pek if bootkey available
+                if self.bootkey is not None:
+                    peklist = row.get(self.attributes["pekList"])
+                    encryptedPekList = PEKLIST_ENC(peklist)
+                    if encryptedPekList['Header'][:4] == b'\x02\x00\x00\x00':
+                        # Up to Windows 2012 R2 looks like header starts this way
+                        md5h = md5()
+                        md5h.update(self.bootKey)
+                        for i in range(1000):
+                            md5h.update(encryptedPekList['KeyMaterial'])
+                        tmpKey = md5h.digest()
+                        rc4 = ARC4.new(tmpKey)
+                        decryptedPekList = PEKLIST_PLAIN(
+                            rc4.encrypt(encryptedPekList['EncryptedPek'])
+                        )
+                        PEKLen = len(PEK_KEY())
+                        for i in range(len(decryptedPekList['DecryptedPek']) // PEKLen):
+                            cursor = i * PEKLen
+                            pek = self.PEK_KEY(
+                                decryptedPekList['DecryptedPek'][cursor:cursor+PEKLen]
+                            )
+                            self.pek.append(pek['Key'])
+
+                    elif encryptedPekList['Header'][:4] == b'\x03\x00\x00\x00':
+                        decryptedPekList = PEKLIST_PLAIN(
+                            decryptAES(
+                                self.bootkey, encryptedPekList['EncryptedPek'],
+                                encryptedPekList['KeyMaterial']
+                            )
+                        )
+                        pos, cur_index = 0, 0
+                        while True:
+                            pek_entry = decryptedPekList['DecryptedPek'][pos:pos+20]
+                            if len(pek_entry) < 20:
+                                break
+                            index, pek = unpack('<L16s', pek_entry)
+                            if index != cur_index:
+                                break
+                            self.pek.append(pek)
+                            cur_index += 1
+                            pos += 20
+
             # in any cases we add the domainDNS object
             stmt = (
                 "INSERT INTO domain_dns "
