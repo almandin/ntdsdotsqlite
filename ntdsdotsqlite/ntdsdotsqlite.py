@@ -14,7 +14,7 @@ import sqlite3
 import re
 
 
-def run(ese_path, outpath, system_path):
+def run(ese_path, outpath, system_path, quiet=False):
     create_database(outpath)
     sqlite_db = sqlite3.connect(outpath)
     fd = open(ese_path, "rb")
@@ -77,7 +77,7 @@ def run(ese_path, outpath, system_path):
     tmp_rows = []
 
     store_tmp = True
-    for row in tqdm(datatable.records(), total=cnt):
+    for row in (tqdm(datatable.records(), total=cnt) if not quiet else datatable.records()):
         obj_category = row.get(objectCategory_attr)
         # if the row is an attribute name :
         if obj_category == attribute_dnt:

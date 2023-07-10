@@ -197,11 +197,14 @@ def decrypt_history(peklist, account, key):
                 encryptedHistory['EncryptedHash'],
                 encryptedHistory['KeyMaterial']
             )
+            for i in range(0, len(tmpHistory) // 16):
+                NTHash = removeDESLayer(tmpHistory[i * 16:(i + 1) * 16], rid)
+                history.append(bytes.hex(NTHash))
         else:
             tmpNTHistory = removeRC4Layer(encryptedHistory)
             for i in range(0, len(tmpNTHistory) // 16):
                 NTHash = removeDESLayer(tmpNTHistory[i * 16:(i + 1) * 16], rid)
-                history.append(NTHash)
+                history.append(bytes.hex(NTHash))
         return history
     else:  # key = lm
         if account["encrypted_lmPwdHistory"] is None:

@@ -97,9 +97,7 @@ class PersonHandler(BaseHandler):
                 account["supplementalCredentials"] = json.dumps(
                     decryptSupplementalInfo(self.peklist, account)
                 )
-            except KeyError as e:
-                print(f"Could not decrypt user account {account['id']}")
-                print(e)
+            except IndexError:
                 self.could_not_decrypt_yet.append(account)
         stmt = """
             INSERT INTO user_accounts VALUES (
@@ -155,7 +153,7 @@ class PersonHandler(BaseHandler):
             account["ntPwdHistory"] = decrypt_history(self.peklist, account, "nt")
             account["supplementalCredentials"] = decryptSupplementalInfo(self.peklist, account)
             self.sqlite_db.execute(
-                "UPDATE user_accounts set nthash=?, lmhash=?, ntPwdHistory=?, lmPwdHistory=? "
+                "UPDATE user_accounts set nthash=?, lmhash=?, ntPwdHistory=?, lmPwdHistory=?, "
                 "supplementalCredentials=? WHERE id=?",
                 (
                     account["nthash"], account["lmhash"], json.dumps(account["ntPwdHistory"]),
