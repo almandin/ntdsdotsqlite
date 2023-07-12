@@ -72,7 +72,7 @@ class DomainHandler(BaseHandler):
                     if encryptedPekList['Header'][:4] == b'\x02\x00\x00\x00':
                         # Up to Windows 2012 R2 looks like header starts this way
                         md5h = md5()
-                        md5h.update(self.bootKey)
+                        md5h.update(self.bootkey)
                         for i in range(1000):
                             md5h.update(encryptedPekList['KeyMaterial'])
                         tmpKey = md5h.digest()
@@ -83,7 +83,7 @@ class DomainHandler(BaseHandler):
                         PEKLen = len(PEK_KEY())
                         for i in range(len(decryptedPekList['DecryptedPek']) // PEKLen):
                             cursor = i * PEKLen
-                            pek = self.PEK_KEY(
+                            pek = PEK_KEY(
                                 decryptedPekList['DecryptedPek'][cursor:cursor+PEKLen]
                             )
                             self.pek.append(pek['Key'])
