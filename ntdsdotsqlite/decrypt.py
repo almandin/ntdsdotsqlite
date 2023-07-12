@@ -177,7 +177,7 @@ def decrypt_hash(peklist, account, key):
             )
         else:
             tmpNTHash = removeRC4Layer(peklist, encryptedHash)
-        return hexlify(removeDESLayer(tmpNTHash, rid))
+        return bytes.hex(removeDESLayer(tmpNTHash, rid))
     else:
         return default
 
