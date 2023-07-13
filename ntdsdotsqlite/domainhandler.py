@@ -15,6 +15,7 @@ class DomainHandler(BaseHandler):
         self.objects = []
         self.bootkey = bootkey
         self.pek = list()
+        self.builtin_ids = set()
 
     def handle(self, row):
         func_levels = {
@@ -65,6 +66,7 @@ class DomainHandler(BaseHandler):
                     ":minPwdLength, :pwdHistoryLength, :minPwdAge, :dn)"
                 )
                 self.sqlite_db.execute(stmt, domain)
+                self.main_domain = domain
                 # extract pek if bootkey available
                 if self.bootkey is not None:
                     peklist = row.get(self.attributes["pekList"])
@@ -115,6 +117,11 @@ class DomainHandler(BaseHandler):
             self.sqlite_db.execute(stmt, domain)
             self.sqlite_db.commit()
             self.objects.append(domain)
+        else:
+            # Here, SID is None, meaning we are looking at a built-in root domain object like
+            #   "ForestDnsZones" or "DomainDnsZones". We store their id to catch them in other
+            #   classes (containers) which need them
+            self.builtin_ids.add(row.get("DNT_col"))
 
     def callback(self):
         for object in self.objects:

@@ -122,7 +122,9 @@ CREATE TABLE organizational_units (
     parent INTEGER,
     dn TEXT,
     isDeleted BOOLEAN,
-    FOREIGN KEY (id) REFERENCES organizational_units (parent)
+    domain INTEGER,
+    FOREIGN KEY (id) REFERENCES organizational_units (parent),
+    FOREIGN KEY (id) REFERENCES domain_dns (domain)
 );
 
 CREATE TABLE containers (
@@ -132,7 +134,9 @@ CREATE TABLE containers (
     commonname TEXT,
     parent INTEGER,
     dn TEXT,
-    isDeleted BOOLEAN
+    isDeleted BOOLEAN,
+    domain INTEGER,
+    FOREIGN KEY (id) REFERENCES domain_dns (domain)
 );
 
 CREATE TABLE trusted_domains (

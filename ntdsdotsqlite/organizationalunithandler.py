@@ -13,7 +13,7 @@ class OrganizationalUnitHandler(BaseHandler):
         }
         stmt = """
             INSERT INTO organizational_units VALUES (
-            :id, :name, :description, :parent, Null, :isDeleted
+            :id, :name, :description, :parent, Null, :isDeleted, Null
             )
         """
         self.sqlite_db.execute(stmt, ou_object)
@@ -23,7 +23,9 @@ class OrganizationalUnitHandler(BaseHandler):
         roots = {domain_id: domain_DN for domain_id, domain_DN in self.sqlite_db.execute(
             "SELECT id, dn FROM domain_dns"
         ).fetchall()}
-        ous = self.sqlite_db.execute("SELECT id, parent, name FROM organizational_units").fetchall()
+        ous = self.sqlite_db.execute(
+            "SELECT id, parent, name FROM organizational_units"
+        ).fetchall()
         ous = {
             ou_id: {"id": ou_id, "name": name, "parent": parent}
             for ou_id, parent, name in ous
@@ -37,17 +39,16 @@ class OrganizationalUnitHandler(BaseHandler):
                     parent = ous[parent_dnt]
                 elif parent_dnt in roots.keys():
                     dn_prefix += ("," + roots[parent_dnt])
+                    domain_id = parent_dnt
                     break
                 else:
-                    print(
-                        f"Warning: could not compute DN of OU {cur_object['name']}."
-                    )
+                    print(f"Warning: could not compute DN of OU {cur_object['name']}.")
                     break
                 cur_object = parent
                 name = parent["name"]
                 dn_prefix += "," + "OU=" + escape_dn_chars(name)
             self.sqlite_db.execute(
-                "UPDATE organizational_units SET dn=? WHERE id=?",
-                (dn_prefix, ou_id)
+                "UPDATE organizational_units SET dn=?, domain=? WHERE id=?",
+                (dn_prefix, domain_id, ou_id)
             )
         self.sqlite_db.commit()

@@ -111,16 +111,18 @@ class ComputerHandler(BaseHandler):
         self.sqlite_db.execute(stmt, account)
 
     def callback(self):
-        # set the domain id
-        domain_id = self.sqlite_db.execute("SELECT id FROM domains").fetchone()[0]
         ous = {
-            oid: dn for oid, dn in self.sqlite_db.execute("SELECT id, dn FROM organizational_units")
+            oid: {"dn": dn, "domain": odid}
+            for oid, dn, odid in self.sqlite_db.execute(
+                "SELECT id, dn, domain FROM organizational_units"
+            )
         }
         machines = self.sqlite_db.execute(
-            "SELECT id, commonname, parent_OU, primaryGroup FROM user_accounts"
+            "SELECT id, commonname, parent_OU, primaryGroup FROM machine_accounts"
         )
         containers = {
-            cid: cdn for (cid, cdn) in self.sqlite_db.execute("SELECT id, dn FROM containers")
+            cid: {"dn": cdn, "domain": cdid}
+            for (cid, cdn, cdid) in self.sqlite_db.execute("SELECT id, dn, domain FROM containers")
         }
         domains = {
             did: ddn for (did, ddn) in self.sqlite_db.execute("SELECT id, dn FROM domain_dns")
@@ -128,20 +130,26 @@ class ComputerHandler(BaseHandler):
         for uid, cn, parent_OU, primaryGroup in machines:
             # Compute DN
             if parent_OU in ous.keys():
-                dn = f"CN={escape_dn_chars(cn)},{ous[parent_OU]}"
+                dn = f"CN={escape_dn_chars(cn)},{ous[parent_OU]['dn']}"
+                domain_id = ous[parent_OU]["domain"]
             elif parent_OU in containers.keys():
-                dn = f"CN={escape_dn_chars(cn)},{containers[parent_OU]}"
+                curdn = containers[parent_OU]['dn']
+                dn = f"CN={escape_dn_chars(cn)},{curdn}"
+                domain_id = containers[parent_OU]["domain"]
             elif parent_OU in domains.keys():
                 dn = f"CN={escape_dn_chars(cn)},{domains[parent_OU]}"
+                # Sets the domain ID to this "OU" ID since its the ID of the root domainDNS object
+                # in which this computer is.
+                domain_id = parent_OU
             else:
                 print(f"Warning: could not compute DN of machine {cn}")
             self.sqlite_db.execute(
-                "UPDATE machine_accounts set domain=?, primaryGroup=("
+                "UPDATE machine_accounts SET domain=?, primaryGroup=("
                 f"SELECT id from groups WHERE SID LIKE '%-{primaryGroup}'"
                 "), dn=? WHERE id=?",
                 (domain_id, dn, uid)
             )
-        # Decrypt users we could not decrypt previously
+        # Decrypt machine secrets we could not decrypt previously
         for account in self.could_not_decrypt_yet:
             account["nthash"] = decrypt_hash(self.peklist, account, "nt")
             account["lmhash"] = decrypt_hash(self.peklist, account, "lm")
@@ -149,7 +157,7 @@ class ComputerHandler(BaseHandler):
             account["ntPwdHistory"] = decrypt_history(self.peklist, account, "nt")
             account["supplementalCredentials"] = decryptSupplementalInfo(self.peklist, account)
             self.sqlite_db.execute(
-                "UPDATE user_accounts set nthash=?, lmhash=?, ntPwdHistory=?, lmPwdHistory=?, "
+                "UPDATE machine_accounts set nthash=?, lmhash=?, ntPwdHistory=?, lmPwdHistory=?, "
                 "supplementalCredentials=? WHERE id=?",
                 (
                     account["nthash"], account["lmhash"], json.dumps(account["ntPwdHistory"]),

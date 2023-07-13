@@ -114,6 +114,7 @@ A table storing organizational units information (object class `Organization-Uni
 - `parent` (INTEGER): The identifier of the OU in which this one is in.
 - `dn` (TEXT): The distinguished name of the OU (Ex. 'OU=ServiceAccounts,OU=BDE,OU=Tier 1,DC=windomain,DC=local').
 - `isDeleted` (BOOLEAN): A boolean to tell wether this object has been removed and is in the recycle bin.
+- `domain` (INTEGER): An integer foreign key to `domain_dns` on its `id` column, representing the exact domain zone to which this OUs belongs.
 
 ## Table `trusted_domains`
 
@@ -127,6 +128,19 @@ A table to store information about trusted domains (object class `Trusted-Domain
 - `trustPartner` (TEXT): The full domain name of the related trust domain (just like cn and name but trustPartner is supposed to hold the entire domain name).
 - `trustType` (TEXT): The type of the trust, either `downlevel`, `uplevel`, `MIT` or `DCE` (See the [Microsoft Documentation](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/36565693-b5e4-4f37-b0a8-c1b12138e18e) for more details).
 - `attributeFlags` (JSON): A dictionary of attribute flags held in the the `trustAttributes` integer, but parsed to be easily accessed (contains information about transitivity for example).
+
+## Table `containers`
+
+A table storing Container information (object class `Container`). It has the following columns:
+
+- `id` (INTEGER): The object identifier in the NTDS database.
+- `name` (TEXT): The name of the container object.
+- `description` (TEXT): The description attribute of the container.
+- `commonnme` (TEXT): The common name attribute of the container.
+- `parent` (INTEGER): The ID in of its parent object, could be another container, a `domain_dns` object or some other kind of objects we do not retrieve.
+- `dn` (TEXT): The distinguished name of the container. This column can be set to `Null` for containers having objects we do no care about in their parents (GPO Containers are not parsed for example).
+- `isDeleted` (BOOL): Boolean indicating if this container is in the recycle bin of the domain.
+- `domain` (INTEGER): Foreign key to `domain_dns` entries on the `id` attribute, representing the root parent domain object of this container. Can be `Null` for containers having unparsed objects in their parents (GPO Containers are not parsed for example).
 
 ## Table ???
 

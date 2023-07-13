@@ -42,7 +42,7 @@ def run(ese_path, outpath, system_path, quiet=False):
         "domainDNS": dh,
         "trustedDomain": TrustedDomainHandler(sqlite_db, attributes, ese_db),
         "group": GroupHandler(link_relations, sqlite_db, attributes, ese_db),
-        "container": ContainerHandler(sqlite_db, attributes, ese_db),
+        "container": ContainerHandler(dh, sqlite_db, attributes, ese_db),
         "organizationalUnit": OrganizationalUnitHandler(sqlite_db, attributes, ese_db),
         "person": PersonHandler(link_relations, sqlite_db, attributes, ese_db, dh),
         "computer": ComputerHandler(sqlite_db, attributes, ese_db, dh)
@@ -109,7 +109,9 @@ def run(ese_path, outpath, system_path, quiet=False):
             if store_tmp:
                 tmp_rows.append(row)
     # manage the first "few" rows we saw when classes and attributes were not set up yet
-    for row in filter(lambda r: r.get(attributes["objectCategory"]) in da_classes.keys(), tmp_rows):
+    for row in filter(
+        lambda r: r.get(attributes["objectCategory"]) in da_classes.keys(), tmp_rows
+    ):
         obj_category = row.get(objectCategory_attr)
         da_classes[obj_category].handle(row)
     sqlite_db.commit()
