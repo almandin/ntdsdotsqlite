@@ -185,37 +185,30 @@ def decrypt_hash(peklist, account, key):
 def decrypt_history(peklist, account, key):
     history = list()
     if key == "nt":
-        if account["encrypted_ntPwdHistory"] is None:
-            return list()
-        rid = account["SID"].split('-')[-1]
-        encryptedHistory = CRYPTED_HISTORY(account["encrypted_ntPwdHistory"])
-        if encryptedHistory['Header'][:4] == b'\x13\x00\x00\x00':
-            encryptedHistory = CRYPTED_HASHW16(account["encrypted_ntPwdHistory"])
-            pekIndex = hexlify(encryptedHistory['Header'])
-            tmpHistory = decryptAES(
-                peklist[int(pekIndex[8:10])],
-                encryptedHistory['EncryptedHash'],
-                encryptedHistory['KeyMaterial']
-            )
-            for i in range(0, len(tmpHistory) // 16):
-                NTHash = removeDESLayer(tmpHistory[i * 16:(i + 1) * 16], rid)
-                history.append(bytes.hex(NTHash))
-        else:
-            tmpNTHistory = removeRC4Layer(peklist, encryptedHistory)
-            for i in range(0, len(tmpNTHistory) // 16):
-                NTHash = removeDESLayer(tmpNTHistory[i * 16:(i + 1) * 16], rid)
-                history.append(bytes.hex(NTHash))
+        _key = "encrypted_ntPwdHistory"
+    else:
+        _key = "encrypted_lmPwdHistory"
+    if account[_key] is None:
         return history
-    else:  # key = lm
-        if account["encrypted_lmPwdHistory"] is None:
-            return list()
-        rid = account["SID"].split('-')[-1]
-        encryptedHistory = CRYPTED_HISTORY(account["encrypted_lmPwdHistory"])
+
+    rid = account["SID"].split('-')[-1]
+    encryptedHistory = CRYPTED_HISTORY(account[_key])
+    pekIndex = hexlify(encryptedHistory['Header'])
+    pekKey = peklist[int(pekIndex[8:10])]
+    if encryptedHistory['Header'][:4] == b'\x13\x00\x00\x00':
+        encryptedHistory = CRYPTED_HASHW16(account[_key])
+        tmpHistory = decryptAES(
+            pekKey,
+            encryptedHistory['EncryptedHash'],
+            encryptedHistory['KeyMaterial']
+        )
+    else:
         tmpHistory = removeRC4Layer(peklist, encryptedHistory)
-        for i in range(0, len(tmpHistory) // 16):
-            hash = removeDESLayer(tmpHistory[i * 16:(i + 1) * 16], rid)
-            history.append(bytes.hex(hash))
-        return history
+    for i in range(0, len(tmpHistory) // 16):
+        interesting_slice = slice(i * 16, (i + 1) * 16)
+        hash = removeDESLayer(tmpHistory[interesting_slice], rid)
+        history.append(bytes.hex(hash))
+    return history
 
 
 def decryptSupplementalInfo(peklist, account):
