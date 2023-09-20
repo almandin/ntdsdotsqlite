@@ -43,7 +43,7 @@ class CRYPTED_HASHW16(Structure):
     structure = (
         ('Header', '8s=b""'),
         ('KeyMaterial', '16s=b""'),
-        ('Unknown', '<L=0'),
+        ('Length', '<L=0'),
         ('EncryptedHash', ':'),
     )
 
@@ -197,14 +197,17 @@ def decrypt_history(peklist, account, key):
     pekKey = peklist[int(pekIndex[8:10])]
     if encryptedHistory['Header'][:4] == b'\x13\x00\x00\x00':
         encryptedHistory = CRYPTED_HASHW16(account[_key])
+        nb_hashes = encryptedHistory['Length'] // 16
         tmpHistory = decryptAES(
             pekKey,
             encryptedHistory['EncryptedHash'],
             encryptedHistory['KeyMaterial']
         )
+        tmpHistory.removesuffix(b"\x10" * 16)
     else:
         tmpHistory = removeRC4Layer(peklist, encryptedHistory)
-    for i in range(0, len(tmpHistory) // 16):
+        nb_hashes = len(tmpHistory) // 16
+    for i in range(nb_hashes):
         interesting_slice = slice(i * 16, (i + 1) * 16)
         hash = removeDESLayer(tmpHistory[interesting_slice], rid)
         history.append(bytes.hex(hash))
