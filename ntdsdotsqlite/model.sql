@@ -59,9 +59,9 @@ CREATE TABLE user_accounts (
     primaryGroup INTEGER,
     memberOf JSON,
     isDisabled BOOLEAN,
-    FOREIGN KEY (id) REFERENCES domains (domain),
-    FOREIGN KEY (id) REFERENCES organizational_units (parent_OU),
-    FOREIGN KEY (id) REFERENCES groups (primaryGroup)
+    FOREIGN KEY (domain) REFERENCES domains (id),
+    FOREIGN KEY (parent_OU) REFERENCES organizational_units (id),
+    FOREIGN KEY (primaryGroup) REFERENCES groups (id)
 );
 
 CREATE TABLE groups (
@@ -74,7 +74,7 @@ CREATE TABLE groups (
     isDeleted BOOLEAN,
     description TEXT,
     memberOf JSON,
-    FOREIGN KEY (id) REFERENCES domains (domain)
+    FOREIGN KEY (domain) REFERENCES domains (id)
 );
 
 CREATE TABLE machine_accounts (
@@ -110,9 +110,9 @@ CREATE TABLE machine_accounts (
     isDeleted BOOLEAN,
     primaryGroup INTEGER,
     isDisabled BOOLEAN,
-    FOREIGN KEY (id) REFERENCES domains (domain),
-    FOREIGN KEY (id) REFERENCES organizational_units (parent_OU),
-    FOREIGN KEY (id) REFERENCES groups (primaryGroup)
+    FOREIGN KEY (domain) REFERENCES domains (id),
+    FOREIGN KEY (parent_OU) REFERENCES organizational_units (id),
+    FOREIGN KEY (primaryGroup) REFERENCES groups (id)
 );
 
 CREATE TABLE organizational_units (
@@ -123,8 +123,8 @@ CREATE TABLE organizational_units (
     dn TEXT,
     isDeleted BOOLEAN,
     domain INTEGER,
-    FOREIGN KEY (id) REFERENCES organizational_units (parent),
-    FOREIGN KEY (id) REFERENCES domain_dns (domain)
+    FOREIGN KEY (parent) REFERENCES organizational_units (id),
+    FOREIGN KEY (domain) REFERENCES domain_dns (id)
 );
 
 CREATE TABLE containers (
@@ -136,7 +136,7 @@ CREATE TABLE containers (
     dn TEXT,
     isDeleted BOOLEAN,
     domain INTEGER,
-    FOREIGN KEY (id) REFERENCES domain_dns (domain)
+    FOREIGN KEY (domain) REFERENCES domain_dns (id)
 );
 
 CREATE TABLE trusted_domains (
