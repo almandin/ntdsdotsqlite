@@ -59,7 +59,7 @@ CREATE TABLE user_accounts (
     primaryGroup INTEGER,
     memberOf JSON,
     isDisabled BOOLEAN,
-    FOREIGN KEY (domain) REFERENCES domains (id),
+    FOREIGN KEY (domain) REFERENCES domain_dns (id),
     FOREIGN KEY (parent_OU) REFERENCES organizational_units (id),
     FOREIGN KEY (primaryGroup) REFERENCES groups (id)
 );
@@ -74,7 +74,7 @@ CREATE TABLE groups (
     isDeleted BOOLEAN,
     description TEXT,
     memberOf JSON,
-    FOREIGN KEY (domain) REFERENCES domains (id)
+    FOREIGN KEY (domain) REFERENCES domain_dns (id)
 );
 
 CREATE TABLE machine_accounts (
@@ -110,7 +110,7 @@ CREATE TABLE machine_accounts (
     isDeleted BOOLEAN,
     primaryGroup INTEGER,
     isDisabled BOOLEAN,
-    FOREIGN KEY (domain) REFERENCES domains (id),
+    FOREIGN KEY (domain) REFERENCES domain_dns (id),
     FOREIGN KEY (parent_OU) REFERENCES organizational_units (id),
     FOREIGN KEY (primaryGroup) REFERENCES groups (id)
 );
